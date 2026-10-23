@@ -10,7 +10,6 @@ permissions:
 
 env:
   UPSTREAM: luqmanfadlli/NuvioMobile-Enhanced
-  OUT_NAME: Nuvio-Enhanced-fullscreen.ipa
 
 jobs:
   patch:
@@ -33,7 +32,6 @@ jobs:
               if ipa:
                   print(f"tag={r['tag_name']}")
                   print(f"url={ipa['browser_download_url']}")
-                  print(f"file={ipa['name']}")
                   break
           PY
 
@@ -50,18 +48,29 @@ jobs:
           fi
 
       - name: Download and patch
+        id: patch
         if: steps.check.outputs.skip == 'false'
         run: |
           curl -fsSL -o upstream.ipa "${{ steps.up.outputs.url }}"
-          python3 scripts/patch_ipa.py upstream.ipa "dist/$OUT_NAME"
+          VERSION=$(python3 - <<'PY'
+          import plistlib, zipfile
+          z = zipfile.ZipFile("upstream.ipa")
+          p = next(n for n in z.namelist() if n.count("/") == 2 and n.endswith(".app/Info.plist"))
+          print(plistlib.loads(z.read(p)).get("CFBundleShortVersionString", "latest"))
+          PY
+          )
+          OUT="Nuvio-Enhanced-${VERSION}.ipa"
+          python3 scripts/patch_ipa.py upstream.ipa "dist/$OUT"
+          echo "out=$OUT" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Publish release
         if: steps.check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.up.outputs.tag }}" "dist/$OUT_NAME" \
+          gh release create "${{ steps.up.outputs.tag }}" "dist/${{ steps.patch.outputs.out }}" \
             -R "$GITHUB_REPOSITORY" \
-            --title "Nuvio Enhanced ${{ steps.up.outputs.tag }} (full screen)" \
-            --notes "Auto-patched from ${{ steps.up.outputs.url }}" \
+            --title "Nuvio Enhanced ${{ steps.patch.outputs.version }}" \
+            --notes "Full screen fix. Source: ${{ steps.up.outputs.url }}" \
             --latest
