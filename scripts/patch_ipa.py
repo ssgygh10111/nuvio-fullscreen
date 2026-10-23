@@ -1,67 +1,42 @@
-name: Patch latest Nuvio Enhanced
+#!/usr/bin/env python3
+import plistlib
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
 
-on:
-  schedule:
-    - cron: "17 */6 * * *"
-  workflow_dispatch: {}
 
-permissions:
-  contents: write
+def patch(src: Path, dst: Path) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        with zipfile.ZipFile(src) as z:
+            z.extractall(tmp)
+        apps = list((tmp / "Payload").glob("*.app"))
+        if len(apps) != 1:
+            sys.exit(f"expected one .app in Payload, found {len(apps)}")
+        plist_path = apps[0] / "Info.plist"
+        raw = plist_path.read_bytes()
+        fmt = plistlib.FMT_BINARY if raw.startswith(b"bplist") else plistlib.FMT_XML
+        info = plistlib.loads(raw)
+        info["UILaunchScreen"] = {"UIImageRespectsSafeAreaInsets": False}
+        info["UIRequiresFullScreen"] = True
+        plist_path.write_bytes(plistlib.dumps(info, fmt=fmt))
 
-env:
-  UPSTREAM: luqmanfadlli/NuvioMobile-Enhanced
-  OUT_NAME: Nuvio-Enhanced-fullscreen.ipa
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as out:
+            for path in sorted(tmp.rglob("*")):
+                rel = path.relative_to(tmp).as_posix()
+                if path.is_symlink():
+                    zi = zipfile.ZipInfo(rel)
+                    zi.create_system = 3
+                    zi.external_attr = (0o120777 << 16)
+                    out.writestr(zi, str(path.readlink()))
+                elif path.is_file():
+                    out.write(path, rel)
+        print(f"patched {apps[0].name} -> {dst}")
 
-jobs:
-  patch:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Find latest upstream release with an IPA
-        id: up
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$UPSTREAM/releases?per_page=20" > releases.json
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          for r in json.load(open("releases.json")):
-              if r.get("draft"):
-                  continue
-              ipa = next((a for a in r["assets"] if a["name"].lower().endswith(".ipa")), None)
-              if ipa:
-                  print(f"tag={r['tag_name']}")
-                  print(f"url={ipa['browser_download_url']}")
-                  print(f"file={ipa['name']}")
-                  break
-          PY
-
-      - name: Skip if already done
-        id: check
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ -z "${{ steps.up.outputs.tag }}" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if gh release view "${{ steps.up.outputs.tag }}" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Download and patch
-        if: steps.check.outputs.skip == 'false'
-        run: |
-          curl -fsSL -o upstream.ipa "${{ steps.up.outputs.url }}"
-          python3 scripts/patch_ipa.py upstream.ipa "dist/$OUT_NAME"
-
-      - name: Publish release
-        if: steps.check.outputs.skip == 'false'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ steps.up.outputs.tag }}" "dist/$OUT_NAME" \
-            -R "$GITHUB_REPOSITORY" \
-            --title "Nuvio Enhanced ${{ steps.up.outputs.tag }} (full screen)" \
-            --notes "Auto-patched from ${{ steps.up.outputs.url }}" \
-            --latest
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit("usage: patch_ipa.py input.ipa output.ipa")
+    patch(Path(sys.argv[1]), Path(sys.argv[2]))
