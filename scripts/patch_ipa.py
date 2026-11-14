@@ -184,6 +184,32 @@ def patch_reconnect_delay(binary: Path) -> bool:
     return False
 
 
+# The player reads mpv.conf from the folder that holds its bundled subtitle font (the app sets
+# mpv's config-dir to that folder). mpv loads it while starting, after the app's own options, so
+# these lines win over the app's defaults:
+#  - a file on the server can be unavailable for a few minutes (the server answers HTTP 503):
+#    keep retrying instead of ending the episode
+#  - keep more of the video loaded ahead (the app's default is 64 MB, ~25 s of 4K)
+MPV_CONF = """# added by nuvio-fullscreen
+stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_delay_max=600,reconnect_delay_total_max=900
+demuxer-max-bytes=300MiB
+demuxer-max-back-bytes=32MiB
+"""
+
+
+def write_mpv_conf(app: Path) -> None:
+    fonts = sorted(app.rglob("NotoSans-Regular.ttf"))
+    if not fonts:
+        print("WARNING: mpv.conf not added (bundled subtitle font not found)")
+        return
+    conf = fonts[0].parent / "mpv.conf"
+    if conf.exists():
+        print(f"WARNING: mpv.conf not added ({conf.relative_to(app)} already exists)")
+        return
+    conf.write_text(MPV_CONF)
+    print(f"mpv.conf added next to {fonts[0].relative_to(app)}")
+
+
 def patch(src: Path, dst: Path) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -206,6 +232,8 @@ def patch(src: Path, dst: Path) -> None:
         for fn, what in ((patch_mpv_timeout, "mpv network-timeout"), (patch_reconnect_delay, "FFmpeg reconnect delay")):
             if not any(fn(b) for b in binaries):
                 print(f"WARNING: {what} not patched")
+
+        write_mpv_conf(apps[0])
 
         dst.parent.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as out:
