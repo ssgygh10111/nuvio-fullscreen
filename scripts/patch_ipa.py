@@ -189,12 +189,13 @@ def patch_reconnect_delay(binary: Path) -> bool:
 # these lines win over the app's defaults:
 #  - a file on the server can be unavailable for a few minutes (the server answers HTTP 503):
 #    keep retrying instead of ending the episode
-#    (reconnect_delay_max=63: FFmpeg doubles the wait after every failed try and gives up once it
-#    passes this value, then starts over from the read loop; 63 keeps the gap between tries under
-#    ~1 min for ~16 min. A big value like 600 leaves gaps of 2-8 min, so playback resumes late.)
+#    (FFmpeg waits 1, 3, 7, 15, 31, 63, 127, 255, 511 s between tries and gives up when the next
+#    wait would pass reconnect_delay_max or the waits add up past reconnect_delay_total_max.
+#    600/1500 keeps it trying for ~17 min. The earlier 63 gave up after ~2 min: a player log
+#    showed 8 tries in 125 s, then the episode "ended" while the server still answered 503.)
 #  - keep more of the video loaded ahead (the app's default is 64 MB, ~25 s of 4K)
 MPV_CONF = """# added by nuvio-fullscreen
-stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_delay_max=63
+stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_delay_max=600,reconnect_delay_total_max=1500
 demuxer-max-bytes=300MiB
 demuxer-max-back-bytes=32MiB
 """
