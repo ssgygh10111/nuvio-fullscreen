@@ -1,0 +1,52 @@
+name: Fetch newer libmpv for Nuvio desktop (Windows)
+
+# Manual only. Takes the libmpv-2.dll from shinchiro's mpv Windows builds (listed on mpv.io),
+# checks that its FFmpeg knows "request_size" (download in pieces), and attaches it to a release here.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find the newest shinchiro libmpv (x86_64, not v3)
+        id: up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/shinchiro/mpv-winbuild-cmake/releases/latest > rel.json
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          r = json.load(open("rel.json"))
+          a = next(a for a in r["assets"] if a["name"].startswith("mpv-dev-x86_64-") and "-v3-" not in a["name"] and a["name"].endswith(".7z"))
+          print(f"tag={r['tag_name']}")
+          print(f"name={a['name']}")
+          print(f"url={a['browser_download_url']}")
+          PY
+      - name: Download and check
+        id: chk
+        run: |
+          sudo apt-get install -y -qq p7zip-full >/dev/null
+          curl -fsSL -o mpv-dev.7z "${{ steps.up.outputs.url }}"
+          7z x -y -ompv mpv-dev.7z >/dev/null
+          DLL=$(find mpv -iname 'libmpv-2.dll' | head -1)
+          test -n "$DLL"
+          cp "$DLL" libmpv-2.dll
+          LAVF=$(strings -a libmpv-2.dll | grep -m1 -E '^Lavf[0-9]+\.' || true)
+          HAS=$(grep -c -a 'initial_request_size' libmpv-2.dll || true)
+          sha256sum libmpv-2.dll mpv-dev.7z > SHA256SUMS.txt
+          echo "lavf=$LAVF" >> "$GITHUB_OUTPUT"
+          echo "has=$HAS" >> "$GITHUB_OUTPUT"
+          echo "Lavf: $LAVF   request_size option found: $HAS"
+          test "$HAS" != "0"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "desktop-mpv-${{ steps.up.outputs.tag }}" libmpv-2.dll SHA256SUMS.txt \
+            -R "$GITHUB_REPOSITORY" --prerelease --latest=false \
+            --title "Desktop libmpv ${{ steps.up.outputs.tag }} (${{ steps.chk.outputs.lavf }})" \
+            --notes "libmpv-2.dll from ${{ steps.up.outputs.url }} (shinchiro mpv Windows builds, listed on mpv.io). FFmpeg ${{ steps.chk.outputs.lavf }}, supports request_size. Not installed anywhere by this workflow."
