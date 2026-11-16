@@ -26,7 +26,7 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           for r in json.load(open("releases.json")):
-              if r.get("draft"):
+              if r.get("draft") or r.get("prerelease"):
                   continue
               ipa = next((a for a in r["assets"] if a["name"].lower().endswith(".ipa")), None)
               if ipa:
