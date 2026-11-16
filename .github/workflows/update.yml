@@ -41,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "${{ steps.up.outputs.tag }}" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          if gh release view "${{ steps.up.outputs.tag }}-r10" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "${{ steps.up.outputs.tag }}-r11" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -69,8 +69,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ steps.up.outputs.tag }}-r10" "dist/${{ steps.patch.outputs.out }}" \
+          gh release create "${{ steps.up.outputs.tag }}-r11" "dist/${{ steps.patch.outputs.out }}" \
             -R "$GITHUB_REPOSITORY" \
             --title "Nuvio Enhanced ${{ steps.patch.outputs.version }}" \
-            --notes "Full screen fix + stalled streams reconnect after 5s + when the server answers 503 or drops the connection it keeps retrying for ~17 min (mpv.conf: reconnect_on_http_error=5xx, reconnect_delay_max=600, reconnect_delay_total_max=1500) + loads more of the video ahead (300 MB instead of 64 MB) + reads the file in 32 MB pieces on fresh connections so that buffer actually fills. Source: ${{ steps.up.outputs.url }}" \
+            --notes "Full screen fix + stalled streams reconnect after 5s + when the server answers 503 or drops the connection it keeps retrying for ~17 min (mpv.conf: reconnect_on_http_error=5xx, reconnect_delay_max=600, reconnect_delay_total_max=1500) + loads more of the video ahead (600 MB instead of 64 MB) + reads the file in 32 MB pieces on fresh connections so that buffer actually fills. Source: ${{ steps.up.outputs.url }}" \
             --latest

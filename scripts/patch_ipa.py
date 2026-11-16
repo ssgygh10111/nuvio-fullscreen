@@ -193,7 +193,7 @@ def patch_reconnect_delay(binary: Path) -> bool:
 #    wait would pass reconnect_delay_max or the waits add up past reconnect_delay_total_max.
 #    600/1500 keeps it trying for ~17 min. The earlier 63 gave up after ~2 min: a player log
 #    showed 8 tries in 125 s, then the episode "ended" while the server still answered 503.)
-#  - keep more of the video loaded ahead (the app's default is 64 MB, ~25 s of 4K)
+#  - keep more of the video loaded ahead: 600 MB (~1.5-3 min of 4K; the app's default is 64 MB, ~25 s). Not more: iOS can close an app that holds too much memory.
 #  - read the file in 32 MB pieces, each on a new connection (request_size, multiple_requests=0).
 #    One long download from the server slows down over time to about the video's own speed
 #    (measured: ~12 Mbit/s on one long connection vs 57-84 Mbit/s on fresh requests), so the
@@ -201,7 +201,7 @@ def patch_reconnect_delay(binary: Path) -> bool:
 #    fills well ahead and the player keeps playing from it while the server says 503.
 MPV_CONF = """# added by nuvio-fullscreen
 stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_delay_max=600,reconnect_delay_total_max=1500,request_size=33554432,multiple_requests=0
-demuxer-max-bytes=300MiB
+demuxer-max-bytes=600MiB
 demuxer-max-back-bytes=32MiB
 """
 
